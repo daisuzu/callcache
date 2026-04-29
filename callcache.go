@@ -10,10 +10,9 @@ import (
 
 // Dispatcher handles each call.
 type Dispatcher struct {
-	mu             sync.Mutex
+	calls          sync.Map
 	expiration     int64
 	updateInterval int64
-	calls          map[string]*call
 }
 
 // NewDispatcher creates a new Dispatcher of function or method calls.
@@ -24,27 +23,27 @@ func NewDispatcher(expiration, updateInterval time.Duration) *Dispatcher {
 	return &Dispatcher{
 		expiration:     expiration.Nanoseconds(),
 		updateInterval: updateInterval.Nanoseconds(),
-		calls:          make(map[string]*call),
 	}
 }
 
 // Do returns the execution result of fn associated with the given key. If there
 // is a valid execution result, it is reused instead of the return value of fn.
-func (d *Dispatcher) Do(key string, fn func() (interface{}, error)) (interface{}, error) {
-	d.mu.Lock()
-	if d.calls[key] == nil {
-		d.calls[key] = &call{expiration: d.expiration, updateInterval: d.updateInterval}
+func (d *Dispatcher) Do(key string, fn func() (any, error)) (any, error) {
+	if v, loaded := d.calls.Load(key); loaded {
+		return v.(*call).do(fn)
 	}
-	d.mu.Unlock()
 
-	return d.calls[key].do(fn)
+	// Create a new entry atomically on cache miss.
+	v, _ := d.calls.LoadOrStore(key, &call{
+		expiration:     d.expiration,
+		updateInterval: d.updateInterval,
+	})
+	return v.(*call).do(fn)
 }
 
 // Remove removes the execution result of the given key.
 func (d *Dispatcher) Remove(key string) {
-	d.mu.Lock()
-	delete(d.calls, key)
-	d.mu.Unlock()
+	d.calls.Delete(key)
 }
 
 type call struct {
@@ -52,11 +51,11 @@ type call struct {
 	expiration     int64
 	updateInterval int64
 	group          singleflight.Group
-	result         interface{}
+	result         any
 	lastUpdate     int64
 }
 
-func (c *call) do(fn func() (interface{}, error)) (interface{}, error) {
+func (c *call) do(fn func() (any, error)) (any, error) {
 	now := time.Now().UnixNano()
 
 	c.mu.RLock()
@@ -73,8 +72,8 @@ func (c *call) do(fn func() (interface{}, error)) (interface{}, error) {
 	return v, nil
 }
 
-func (c *call) update(fn func() (interface{}, error)) (interface{}, error) {
-	val, err, _ := c.group.Do("update", func() (interface{}, error) {
+func (c *call) update(fn func() (any, error)) (any, error) {
+	val, err, _ := c.group.Do("update", func() (any, error) {
 		now := time.Now().UnixNano()
 		if t := now - c.lastUpdate; t < c.expiration && (c.updateInterval == 0 || t < c.updateInterval) {
 			// If the short term timing of c.group.Do does not match, use the previous result.
