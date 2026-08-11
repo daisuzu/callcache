@@ -1,47 +1,81 @@
 package callcache
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
 )
 
 func TestDispatcher_Do(t *testing.T) {
-	type args struct {
-		key string
-		fn  func() (any, error)
+	type value struct {
+		data string
 	}
-	tests := []struct {
-		name       string
-		args       args
-		want       any
-		wantErr    bool
-		wantUpdate bool
-	}{
+	testDispatcherDo[*value](t, "value", []testDispatcherDoTest[*value]{
 		{
-			name: "ok",
-			args: args{
-				key: "key",
-				fn:  func() (any, error) { return "result", nil },
-			},
-			want:       "result",
+			name:       "ok",
+			key:        "key",
+			fn:         func() (*value, error) { return &value{data: "result"}, nil },
+			want:       &value{data: "result"},
 			wantUpdate: true,
 		},
 		{
-			name: "err",
-			args: args{
-				key: "key",
-				fn:  func() (any, error) { return nil, errors.New("call error") },
-			},
+			name:    "err",
+			key:     "key",
+			fn:      func() (*value, error) { return nil, errors.New("call error") },
 			want:    nil,
 			wantErr: true,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := NewDispatcher(0, 0)
+		{
+			name:       "nil",
+			key:        "key",
+			fn:         func() (*value, error) { return nil, nil },
+			want:       nil,
+			wantUpdate: true,
+		},
+	})
 
-			got, err := d.Do(tt.args.key, tt.args.fn)
+	testDispatcherDo[context.Context](t, "interface", []testDispatcherDoTest[context.Context]{
+		{
+			name:       "ok",
+			key:        "key",
+			fn:         func() (context.Context, error) { return context.TODO(), nil },
+			want:       context.TODO(),
+			wantUpdate: true,
+		},
+		{
+			name:    "err",
+			key:     "key",
+			fn:      func() (context.Context, error) { return nil, errors.New("call error") },
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:       "nil",
+			key:        "key",
+			fn:         func() (context.Context, error) { return nil, nil },
+			want:       nil,
+			wantUpdate: true,
+		},
+	})
+}
+
+type testDispatcherDoTest[V any] struct {
+	name       string
+	key        string
+	fn         func() (V, error)
+	want       V
+	wantErr    bool
+	wantUpdate bool
+}
+
+func testDispatcherDo[V any](t *testing.T, prefix string, tests []testDispatcherDoTest[V]) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(prefix+"/"+tt.name, func(t *testing.T) {
+			d := NewDispatcher[V](0, 0)
+
+			got, err := d.Do(tt.key, tt.fn)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Do() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -49,11 +83,11 @@ func TestDispatcher_Do(t *testing.T) {
 				t.Errorf("Do() = %v, want %v", got, tt.want)
 			}
 
-			c, loaded := d.calls.Load(tt.args.key)
+			c, loaded := d.calls.Load(tt.key)
 			if !loaded {
 				t.Fatal("expected entry in calls map")
 			}
-			call := c.(*call)
+			call := c.(*call[V])
 			if !reflect.DeepEqual(call.result, tt.want) {
 				t.Errorf("call.result = %v, want %v", call.result, tt.want)
 			}
@@ -71,24 +105,24 @@ func TestDispatcher_Remove(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		data map[string]any
+		data map[string]string
 	}{
 		{
 			name: "ok",
 			args: args{key: "key"},
-			data: map[string]any{"key": "result"},
+			data: map[string]string{"key": "result"},
 		},
 		{
 			name: "missing",
 			args: args{key: "key"},
-			data: map[string]any{},
+			data: map[string]string{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := NewDispatcher(0, 0)
+			d := NewDispatcher[string](0, 0)
 			for k, v := range tt.data {
-				d.calls.Store(k, &call{result: v})
+				d.calls.Store(k, &call[string]{result: v})
 			}
 
 			d.Remove(tt.args.key)
