@@ -1,7 +1,18 @@
 # callcache
 
-[![GoDoc](https://godoc.org/github.com/daisuzu/callcache?status.svg)](https://godoc.org/github.com/daisuzu/callcache)
-[![Test Status](https://github.com/daisuzu/callcache/workflows/test/badge.svg?branch=master)](https://github.com/daisuzu/callcache/actions?workflow=test)
+[![Go Reference](https://pkg.go.dev/badge/github.com/daisuzu/callcache.svg)](https://pkg.go.dev/github.com/daisuzu/callcache)
+[![test](https://github.com/daisuzu/callcache/actions/workflows/test.yaml/badge.svg?branch=master)](https://github.com/daisuzu/callcache/actions/workflows/test.yaml)
 
-Package callcache provides a duplicate call suppression mechanism with cache.  
-This is inspired by [github.com/Songmu/smartcache](https://github.com/Songmu/smartcache).
+Package callcache provides a duplicate call suppression mechanism with cache.
+
+## Usage
+
+```go
+var dispatcher = callcache.NewDispatcher[string](1*time.Minute, 10*time.Second)
+
+func Get(ctx context.Context, key string) (string, error) {
+	return dispatcher.Do(key, func() (string, error) {
+		return fetch(ctx, key)
+	})
+}
+```
