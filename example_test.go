@@ -101,7 +101,7 @@ func ExampleDispatcher_Do_multiple() {
 func ExampleDispatcher_Do_concurrentSameKey() {
 	dispatcher := callcache.NewDispatcher[int32](1*time.Minute, 10*time.Second)
 
-	var value int32
+	var value atomic.Int32
 
 	wg := sync.WaitGroup{}
 	results := make([]any, 3)
@@ -110,7 +110,7 @@ func ExampleDispatcher_Do_concurrentSameKey() {
 		go func(i int) {
 			results[i], _ = dispatcher.Do("key", func() (int32, error) {
 				fmt.Println("Do")
-				return atomic.AddInt32(&value, 1), nil
+				return value.Add(1), nil
 			})
 			wg.Done()
 		}(i)
